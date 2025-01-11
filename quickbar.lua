@@ -92,6 +92,7 @@ highlight.TextXAlignment = Enum.TextXAlignment.Left
 local lastArgument = ''
 local currentSelection = 0
 local buttons = {}
+local plugins = {}
 local suggestions = {}
 local seperatedCommand = ''
 local prevButton = nil
@@ -104,19 +105,20 @@ local coreGuiTypes = {'inventory', 'playerlist', 'chat', 'reset', 'emotes', 'all
 
 local commands = {}
 local types = {
+	['name'] = 'name';
+	['true/false'] = 'bool';
 	['player'] = 'player';
-	['team name'] = 'team';
-	['class name'] = 'class';
+	['teamname'] = 'team';
+	['classname'] = 'class';
 	['inventory/playerlist/chat/reset/emotes/all'] = 'coregui';
 }
 
 function parseCommand(command)
 	local aliases = command:split(' / ')
-	local lastAlias = aliases[#aliases]
 
 	local arguments = {}
-	for arg in lastAlias:gmatch('%[(.-)%]') or {} do
-		table.insert(arguments, types[arg] or 'any')
+	for arg in command:gmatch('%[(.-)%]') or {} do
+		table.insert(arguments, types[arg:gsub(' ', '')] or 'any')
 	end
 
 	for _, alias in pairs(aliases) do
@@ -139,15 +141,26 @@ CMDsF.ChildAdded:Connect(function(label)
 	end
 end)
 
+coroutine.wrap(function()
+	while true do
+		plugins = {}
+		for _, file in pairs(listfiles('')) do
+			local fileName = file:match("([^/\\]+%.iy)$")
+			if fileName and fileName:lower() ~= "iy_fe.iy" and not isfolder(fileName) then -- skidded from iy source
+				table.insert(plugins, fileName)
+			end
+		end
+
+		task.wait(60)
+	end
+end)()
+
 local argumentTypes = {
 	command = function(start)
-		if start == '' then
-			return {}
-		end
+		if start == '' then return {} end
 
 		start = start:lower()
 		local suggestions = {}
-
 		for command, _ in pairs(commands) do
 			local cmdStart = command:sub(0, #start)
 			if cmdStart == start then
@@ -158,13 +171,10 @@ local argumentTypes = {
 		return suggestions
 	end,
 
-	player = function(start)
-		if start == '' then
-			return {}
-		end
+	player = function(command, start)
+		if start == '' then return {} end
 
 		local suggestions = {}
-
 		local players = players:GetPlayers()
 		for _, player in pairs(players) do
 			local nameStart = player.Name:sub(0, #start):lower()
@@ -187,10 +197,9 @@ local argumentTypes = {
 		return suggestions
 	end,
 
-	coregui = function(start)
+	coregui = function(command, start)
 		start = start:lower()
 		local suggestions = {}
-
 		for _, arg in pairs(coreGuiTypes) do
 			local cmdStart = arg:sub(0, #start)
 			if start == cmdStart then
@@ -201,10 +210,9 @@ local argumentTypes = {
 		return suggestions
 	end,
 
-	team = function(start)
+	team = function(command, start)
 		start = start:lower()
 		local suggestions = {}
-
 		for _, team in pairs(teams:GetTeams()) do
 			local cmdStart = team.Name:sub(0, #start)
 			if cmdStart == start then
@@ -215,12 +223,26 @@ local argumentTypes = {
 		return suggestions
 	end,
 
-	class = function()
-		return {} -- TODO
+	bool = function(command, start)
+		return {'true', 'false'}
 	end,
 
-	any = function() 
-		return {} 
+	name = function(command, start)
+		local suggestions = {}
+		if command:find('plugin') then
+			for _, plugin in pairs(plugins) do
+				local cmdStart = plugin:sub(0, #start)
+				if cmdStart == start then
+					table.insert(suggestions, plugin)
+				end
+			end
+		end
+
+		return suggestions
+	end,
+
+	class = function(command, start)
+		return {} -- TODO
 	end
 }
 
@@ -276,13 +298,10 @@ function renderSuggestions(text)
 			local argumentType = commandArguments[lastIndex-1]
 			
 			if argumentType == 'player' then
-				local players = lastArgument:split(',')
-				lastArgument = players[#players]
+				lastArgument = lastArgument:match('([^,]+)$') or lastArgument
 			end
 			
-			if argumentType then 
-				suggestions = argumentTypes[argumentType](lastArgument) 
-			end
+			suggestions = (not argumentTypes[argumentType] and {}) or argumentTypes[argumentType](seperatedCommand, lastArgument)
 		end
 	end
 
